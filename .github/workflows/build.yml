@@ -50,9 +50,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .git/lfs
-          key: lfs-${{ hashFiles('.git/objects/info/lfs/**') }}
+          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
           restore-keys: |
-            lfs-
+            ${{ runner.os }}-lfs-
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-${{ matrix.os }}
+          max-size: 1G
 
       - uses: actions/checkout@v4
         with:
