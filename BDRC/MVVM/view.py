@@ -1,11 +1,14 @@
 import os
 import cv2
+import sys
+import subprocess
+import re
 from uuid import UUID
-from pypdf import PdfReader
 from typing import Dict, List
 from PySide6.QtCore import Signal, Qt, QThreadPool
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLabel
-
+from pdf2image import convert_from_path
+import platform
 from BDRC.Styles import DARK
 from BDRC.Inference import OCRPipeline
 from BDRC.Data import OpStatus, Platform, OCRData, OCRModel, OCResult
@@ -215,40 +218,126 @@ class AppView(QWidget):
                 if os.path.isfile(file_path):
                     try:
                         imported_data = {}
-                        reader = PdfReader(file_path)
                         image_paths = []
 
-                        if len(reader.pages) > 0:
-                            progress = ImportFilesProgress("Reading PDF file...", max_length=len(reader.pages))
-                            progress.setWindowModality(Qt.WindowModality.WindowModal)
+                        # Try to find bundled Poppler
+                        poppler_path = None
+                        try:
+                            # Check if we're running from a bundled app
+                            if getattr(sys, 'frozen', False):
+                                base_path = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
+                                
+                                # Check for different possible Poppler directory structures
+                                possible_paths = [
+                                    os.path.join(base_path, 'poppler', 'bin'),  # Standard structure
+                                    os.path.join(base_path, 'poppler', 'Library', 'bin'),  # Alternative structure
+                                    os.path.join(base_path, 'poppler')  # Direct bin directory
+                                ]
+                                
+                                # Find the first valid path that exists and contains pdfinfo
+                                for path in possible_paths:
+                                    if os.path.exists(path):
+                                        # Check if pdfinfo exists in this path
+                                        pdfinfo_path = os.path.join(path, 'pdfinfo')
+                                        if platform.system() == 'Windows':
+                                            pdfinfo_path += '.exe'
+                                        
+                                        if os.path.exists(pdfinfo_path):
+                                            poppler_path = path
+                                            print(f"Found Poppler at: {poppler_path}")
+                                            break
+                                
+                                if not poppler_path:
+                                    print("Poppler binaries not found in expected locations")
+                        except Exception as e:
+                            print(f"Error finding bundled Poppler: {e}")
+                            poppler_path = None
+                            
+                        # Open the PDF file with pdf2image
+                        try:
+                            # Calculate total pages for progress (we'll need to convert first page to get count)
+                            first_page = convert_from_path(file_path, dpi=300, first_page=1, last_page=1, poppler_path=poppler_path)
+                            if first_page:
+                                # Use pdftoppm to get page count
+                                try:
+                                    if poppler_path:
+                                        pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
+                                        if platform.system() == 'Windows':
+                                            pdfinfo_path += '.exe'
+                                        if os.path.exists(pdfinfo_path):
+                                            result = subprocess.run([pdfinfo_path, file_path], capture_output=True, text=True)
+                                            match = re.search(r'Pages:\s+(\d+)', result.stdout)
+                                            if match:
+                                                total_pages = int(match.group(1))
+                                            else:
+                                                # Fallback: try to convert all pages and count them
+                                                total_pages = 1  # Default to 1 if we can't determine
+                                        else:
+                                            total_pages = 1
+                                    else:
+                                        # Try using system pdfinfo
+                                        result = subprocess.run(['pdfinfo', file_path], capture_output=True, text=True)
+                                        match = re.search(r'Pages:\s+(\d+)', result.stdout)
+                                        if match:
+                                            total_pages = int(match.group(1))
+                                        else:
+                                            total_pages = 1
+                                except Exception as e:
+                                    print(f"Error getting page count: {e}")
+                                    total_pages = 1  # Default to 1 if we can't determine
+                                
+                                progress = ImportFilesProgress("Reading PDF file...", max_length=total_pages)
+                                progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-                            tmp_image_dir = os.path.join(self.tmp_dir, "images")
-                            create_dir(tmp_image_dir)
+                                tmp_image_dir = os.path.join(self.tmp_dir, "images")
+                                create_dir(tmp_image_dir)
 
-                            for idx, page in enumerate(reader.pages):
-                                if progress.wasCanceled():
-                                    break
+                                # Convert first page (already converted)
+                                tmp_img_path = f"{tmp_image_dir}/{file_n}_0.jpg"
+                                first_page[0].save(tmp_img_path, "JPEG", quality=100)
+                                image_paths.append(tmp_img_path)
+                                progress.setValue(0)
+                                
+                                # Convert remaining pages if there are more
+                                if total_pages > 1:
+                                    # Process in batches to avoid memory issues
+                                    batch_size = 5
+                                    for batch_start in range(2, total_pages + 1, batch_size):
+                                        if progress.wasCanceled():
+                                            break
+                                            
+                                        batch_end = min(batch_start + batch_size - 1, total_pages)
+                                        progress.setLabelText(f"Processing pages {batch_start} to {batch_end} of {total_pages}...")
+                                        
+                                        # Convert batch of pages
+                                        pages = convert_from_path(
+                                            file_path, 
+                                            dpi=300, 
+                                            first_page=batch_start, 
+                                            last_page=batch_end,
+                                            poppler_path=poppler_path
+                                        )
+                                        
+                                        # Save each page
+                                        for i, page in enumerate(pages):
+                                            page_num = batch_start + i - 1  # Adjust for 0-based indexing
+                                            tmp_img_path = f"{tmp_image_dir}/{file_n}_{page_num}.jpg"
+                                            page.save(tmp_img_path, "JPEG", quality=100)
+                                            image_paths.append(tmp_img_path)
+                                            progress.setValue(page_num)
+                                
+                                size_hint = self.image_gallery.sizeHint()
+                                target_width = size_hint.width() - 80
 
-                                if len(page.images) > 0:
-                                    data = page.images[0].data
-                                    tmp_img_path = f"{tmp_image_dir}/{file_n}_{idx}.jpg"
+                                for idx, img_path in enumerate(image_paths):
+                                    if os.path.isfile(img_path):
+                                        ocr_data = build_ocr_data(idx, img_path, target_width)
+                                        imported_data[ocr_data.guid] = ocr_data
 
-                                    with open(str(tmp_img_path), "wb") as f:
-                                        f.write(data)
-
-                                    image_paths.append(tmp_img_path)
-                                    progress.setValue(idx)
-
-                            size_hint = self.image_gallery.sizeHint()
-                            target_width = size_hint.width() - 80
-
-                            for idx, file_path in enumerate(image_paths):
-                                if os.path.isfile(file_path):
-                                    ocr_data = build_ocr_data(idx, file_path, target_width)
-                                    imported_data[ocr_data.guid] = ocr_data
-
-                            self.import_files(imported_data)
-
+                                self.import_files(imported_data)
+                        except Exception as e:
+                            error_dialog = NotificationDialog("Error importing PDF", f"PDF import error: {str(e)}")
+                            error_dialog.exec()
                     except Exception as e:
                         error_dialog = NotificationDialog("Error importing PDF", str(e))
                         error_dialog.exec_()
@@ -308,7 +397,7 @@ class AppView(QWidget):
                 self._dataview_model.update_ocr_data(guid, page_text)
                 self._dataview_model.update_page_data(guid, line_data, mask, angle)
             else:
-                dialog = NotificationDialog("Failed Running OCR", "Failed to run OCR on selected image.")
+                dialog = NotificationDialog("Failed Running OCR", f"Failed to run OCR on selected image.\n\n{result}")
                 dialog.exec()
         else:
             dialog = NotificationDialog("Image not found", "The selected image could not be read from disk.")
