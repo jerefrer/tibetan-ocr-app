@@ -1,14 +1,13 @@
-name: Build Packages
+name: MacOS Build and Sign
 
 on:
   push:
     tags:
-      - "v*.*" # Triggers on tags like v1.0.0, v0.1.0, etc.
+      - "v*"
+  workflow_dispatch:
 
 jobs:
   build:
-    timeout-minutes: 60
-
     strategy:
       matrix:
         os: [windows-latest, macos-13, macos-latest]
@@ -24,7 +23,7 @@ jobs:
         run: |
           OS=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
           ARCH=$(echo "$RUNNER_ARCH" | tr '[:upper:]' '[:lower:]')
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="0.1.1"
           ARTIFACT_NAME="bdrc_ocr_${OS}_${ARCH}_${VERSION}"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
@@ -38,7 +37,7 @@ jobs:
         run: |
           $OS = $env:RUNNER_OS.ToLower()
           $ARCH = $env:RUNNER_ARCH.ToLower()
-          $VERSION = $env:GITHUB_REF_NAME -replace '^v',''
+          $VERSION = "0.1.1"
           $ARTIFACT_NAME = "bdrc_ocr_${OS}_${ARCH}_${VERSION}"
           echo "VERSION=${VERSION}" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -48,9 +47,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .git/lfs
-          key: lfs-${{ hashFiles('.git/objects/info/lfs/**') }}
+          key: ${{ runner.os }}-lfs-${{ hashFiles('.lfs-assets-id') }}
           restore-keys: |
-            lfs-
+            ${{ runner.os }}-lfs-
 
       - uses: actions/checkout@v4
         with:
@@ -58,9 +57,6 @@ jobs:
 
       - name: Pull LFS objects
         run: git lfs pull
-
-      - name: ccache
-        uses: hendrikmuhs/ccache-action@v1.2
 
       - name: Cache Nuitka
         uses: actions/cache@v4
@@ -73,6 +69,11 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -81,7 +82,91 @@ jobs:
           pip install -r requirements.txt
           pyside6-rcc resources.qrc -o resources.py
 
-      - name: Install create-dmg (macOS) and set up certificate for
+      - name: Download Poppler for Windows
+        if: runner.os == 'Windows'
+        run: |
+          # Create directory for Poppler
+          mkdir -p poppler
+
+          # Get the latest release information from GitHub API
+          $latestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/oschwartz10612/poppler-windows/releases/latest")
+          $latestVersion = $latestRelease.tag_name.Substring(1)  # Remove the 'v' prefix
+          $downloadUrl = $latestRelease.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1 -ExpandProperty browser_download_url
+
+          Write-Host "Latest Poppler version: $latestVersion"
+          Write-Host "Download URL: $downloadUrl"
+
+          # Download and extract the latest Poppler for Windows
+          Invoke-WebRequest -Uri $downloadUrl -OutFile "poppler.zip"
+
+          # Create a temporary directory for extraction
+          mkdir -p temp_poppler
+          Expand-Archive -Path "poppler.zip" -DestinationPath "temp_poppler" -Force
+
+          # Find any bin directory in the extracted content (recursively)
+          $binDir = Get-ChildItem -Path "temp_poppler" -Recurse -Directory | Where-Object { $_.Name -eq "bin" } | Select-Object -First 1
+
+          if ($binDir) {
+            Write-Host "Found bin directory at: $($binDir.FullName)"
+            
+            # Copy the bin directory to poppler/
+            Copy-Item -Path $binDir.FullName -Destination "poppler\" -Recurse -Force
+            
+            # Check if pdfinfo.exe exists in the bin directory
+            if (Test-Path "poppler\bin\pdfinfo.exe") {
+              echo "Poppler downloaded and extracted successfully"
+            } else {
+              echo "Failed to find pdfinfo.exe in the bin directory"
+              exit 1
+            }
+          } else {
+            echo "No bin directory found in the extracted content"
+            exit 1
+          }
+
+          # Clean up temporary directory
+          Remove-Item -Path "temp_poppler" -Recurse -Force
+          Remove-Item -Path "poppler.zip" -Force
+
+      - name: Download Poppler for macOS
+        if: runner.os == 'macOS'
+        run: |
+          # Install Poppler using Homebrew
+          brew install poppler
+
+          # Create directory structure for bundling
+          mkdir -p poppler/bin
+
+          # Copy Poppler binaries to our directory
+          cp $(which pdfinfo) poppler/bin/
+          cp $(which pdftoppm) poppler/bin/
+          cp $(which pdftotext) poppler/bin/
+
+          # Copy required libraries
+          mkdir -p poppler/lib
+          # Find and copy dynamic libraries that Poppler depends on
+          for bin in poppler/bin/*; do
+            if [ -f "$bin" ]; then
+              echo "Checking dependencies for $bin"
+              otool -L "$bin" | grep -v "/System/Library" | grep -v "/usr/lib" | awk '{print $1}' | while read -r lib; do
+                if [ -f "$lib" ]; then
+                  base_lib=$(basename "$lib")
+                  echo "Copying $lib to poppler/lib/$base_lib"
+                  cp "$lib" "poppler/lib/$base_lib" || true
+                fi
+              done
+            fi
+          done
+
+          # Verify the download
+          if [ -f "poppler/bin/pdfinfo" ]; then
+            echo "Poppler prepared successfully for bundling"
+          else
+            echo "Failed to prepare Poppler for bundling"
+            exit 1
+          fi
+
+      - name: Install create-dmg (macOS) and set up certificate for signing and notarization
         if: ${{ runner.os == 'macOS' }}
         env:
           CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_CERTIFICATE_P12_BASE64 }}
@@ -101,9 +186,8 @@ jobs:
         if: ${{ runner.os == 'macOS' }}
         env:
           APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          SIGNING_IDENTITY: "Developer ID Application: ${{ secrets.APPLE_DEVELOPER_NAME }} (${{ secrets.APPLE_TEAM_ID }})"
+          APPLE_TEAM_ID: ${{ secrets.APPLE_DEVELOPER_TEAM_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           # Build app
           python -m nuitka --standalone \
@@ -115,8 +199,10 @@ jobs:
             --product-version='${{ env.VERSION }}' \
             --macos-app-name="BDRC Tibetan OCR" \
             --macos-create-app-bundle \
+            --assume-yes-for-downloads \
             --include-data-dir=./Assets=Assets \
             --include-data-dir=./Models=Models \
+            --include-data-dir=./poppler=poppler \
             main.py
 
           mv "macOSBuild/main.app" "macOSBuild/BDRC Tibetan OCR.app"
@@ -131,12 +217,12 @@ jobs:
           # Sign components
           find "macOSBuild/BDRC Tibetan OCR.app" -type f \( -name "*.dylib" -o -name "*.so" -o -name "*.onnx" \) -exec \
             codesign --force --verify --options=runtime --timestamp \
-            --sign "$SIGNING_IDENTITY" \
+            --sign "Developer ID Application: Jeremy Frere ($APPLE_TEAM_ID)" \
             --identifier "io.bdrc.ocrapp" {} +
 
           # Sign app bundle
           codesign --force --verify --options=runtime --timestamp --deep \
-            --sign "$SIGNING_IDENTITY" \
+            --sign "Developer ID Application: Jeremy Frere ($APPLE_TEAM_ID)" \
             --identifier "io.bdrc.ocrapp" \
             "macOSBuild/BDRC Tibetan OCR.app"
 
@@ -199,7 +285,7 @@ jobs:
 
           # Sign and notarize DMG
           codesign --force --verify --options=runtime --timestamp \
-            --sign "$SIGNING_IDENTITY" \
+            --sign "Developer ID Application: Jeremy Frere ($APPLE_TEAM_ID)" \
             --identifier "io.bdrc.ocrapp" \
             "BDRC Tibetan OCR.dmg"
 
@@ -224,10 +310,12 @@ jobs:
             --windows-icon-from-ico=logo.ico `
             --company-name="Buddhist Digital Resource Center" `
             --product-name="Tibetan OCR App" `
-            --file-version=${{ env.VERSION }} `
-            --product-version=${{ env.VERSION }} `
+            --file-version='${{ env.VERSION }}' `
+            --product-version='${{ env.VERSION }}' `
+            --assume-yes-for-downloads `
             --include-data-dir=./Assets=Assets `
             --include-data-dir=./Models=Models `
+            --include-data-dir=./poppler=poppler `
             main.py
 
       - name: Upload artifact
@@ -240,6 +328,7 @@ jobs:
   create-release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -255,5 +344,5 @@ jobs:
           name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate-release-notes: true
           files: artifacts/**/*
