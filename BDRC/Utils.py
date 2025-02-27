@@ -19,7 +19,7 @@ from typing import List, Tuple, Optional, Sequence
 from BDRC.Data import OCRModelConfig, Platform, ScreenData, BBox, Line, \
     OCRModel, OCRData
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, Qt
 
 from Config import OCRARCHITECTURE, CHARSETENCODER
 
@@ -102,7 +102,7 @@ def generate_guid(clock_seq: int):
 def build_ocr_data(tick: int, file_path: str, target_height: int):
     file_name = get_filename(file_path)
     guid = generate_guid(tick)
-    q_image = QImage(file_path).scaledToHeight(target_height)
+    q_image = QImage(file_path).scaledToHeight(target_height, Qt.TransformationMode.SmoothTransformation)
     
     ocr_data = OCRData(
         guid=guid,
