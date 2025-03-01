@@ -248,6 +248,22 @@ jobs:
           chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftoppm"
           chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftotext"
           
+          # Copy the library files to the app bundle
+          echo "Copying Poppler library files to the app bundle..."
+          cp poppler/bin/*.dylib "macOSBuild/main.app/Contents/MacOS/poppler/bin/"
+          
+          # Verify the dylib files are present and copy them again if needed
+          echo "Verifying dylib files in app bundle..."
+          if [ ! -f "macOSBuild/main.app/Contents/MacOS/poppler/bin/libpoppler.dylib" ]; then
+            echo "Warning: libpoppler.dylib not found in app bundle, trying alternative copy method..."
+            # Try to find the dylib files in the Homebrew installation
+            POPPLER_BREW_PATH=$(brew --prefix poppler)
+            if [ -d "$POPPLER_BREW_PATH/lib" ]; then
+              echo "Copying from Homebrew lib directory: $POPPLER_BREW_PATH/lib"
+              cp $POPPLER_BREW_PATH/lib/*.dylib "macOSBuild/main.app/Contents/MacOS/poppler/bin/"
+            fi
+          fi
+          
           # List the contents to verify
           echo "Contents of app bundle poppler directory:"
           ls -la "macOSBuild/main.app/Contents/MacOS/poppler"
