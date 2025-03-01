@@ -207,7 +207,6 @@ jobs:
           # Build app
           python -m nuitka --standalone \
             --output-dir=macOSBuild \
-            --output-filename="BDRC Tibetan OCR" \
             --plugin-enable=pyside6 \
             --company-name="Buddhist Digital Resource Center" \
             --product-name="BDRC Tibetan OCR" \
@@ -223,20 +222,20 @@ jobs:
             
           # Make the Poppler binaries executable
           echo "Making Poppler binaries executable..."
-          chmod +x "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/bin/pdfinfo"
-          chmod +x "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/bin/pdftoppm"
-          chmod +x "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/bin/pdftotext"
+          chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdfinfo"
+          chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftoppm"
+          chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftotext"
 
           # Create lib directory and copy the library files to the correct location
           echo "Creating lib directory and copying Poppler library files..."
-          mkdir -p "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/lib"
-          cp poppler/lib/*.dylib "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/lib/"
+          mkdir -p "macOSBuild/main.app/Contents/MacOS/poppler/lib"
+          cp poppler/lib/*.dylib "macOSBuild/main.app/Contents/MacOS/poppler/lib/"
 
           # Use install_name_tool to update library paths in all dylibs
           echo "Updating library paths in dylibs..."
 
           # First, get a list of all dylibs
-          DYLIBS=$(ls "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/lib/"*.dylib)
+          DYLIBS=$(ls "macOSBuild/main.app/Contents/MacOS/poppler/lib/"*.dylib)
 
           # For each dylib, update its ID and fix its dependencies
           for dylib in $DYLIBS; do
@@ -252,7 +251,7 @@ jobs:
             # For each dependency, if it's one of our libraries, update its path
             for dep in $deps; do
               dep_basename=$(basename "$dep")
-              if [ -f "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/lib/$dep_basename" ]; then
+              if [ -f "macOSBuild/main.app/Contents/MacOS/poppler/lib/$dep_basename" ]; then
                 install_name_tool -change "$dep" "@executable_path/../lib/$dep_basename" "$dylib"
                 echo "Updated $basename to use @executable_path/../lib/$dep_basename"
               fi
@@ -261,12 +260,12 @@ jobs:
 
           # Update the binaries to use the libraries in the lib directory
           for bin in pdfinfo pdftoppm pdftotext; do
-            bin_path="macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/bin/$bin"
+            bin_path="macOSBuild/main.app/Contents/MacOS/poppler/bin/$bin"
             deps=$(otool -L "$bin_path" | grep -v ":" | awk '{print $1}')
             
             for dep in $deps; do
               dep_basename=$(basename "$dep")
-              if [ -f "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/lib/$dep_basename" ]; then
+              if [ -f "macOSBuild/main.app/Contents/MacOS/poppler/lib/$dep_basename" ]; then
                 install_name_tool -change "$dep" "@executable_path/../lib/$dep_basename" "$bin_path"
                 echo "Updated $bin to use @executable_path/../lib/$dep_basename"
               fi
@@ -275,11 +274,14 @@ jobs:
 
           # List the contents to verify
           echo "Contents of app bundle poppler directory:"
-          ls -la "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler"
           echo "Contents of app bundle poppler/bin directory:"
-          ls -la "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/bin"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler/bin"
           echo "Contents of app bundle poppler/lib directory:"
-          ls -la "macOSBuild/BDRC Tibetan OCR.app/Contents/MacOS/poppler/lib"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler/lib"
+
+          # Rename the app bundle
+          mv "macOSBuild/main.app" "macOSBuild/BDRC Tibetan OCR.app"
 
           # Set up icon
           RESOURCES_PATH="macOSBuild/BDRC Tibetan OCR.app/Contents/Resources"
