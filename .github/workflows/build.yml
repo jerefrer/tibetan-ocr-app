@@ -115,74 +115,34 @@ jobs:
             
             # Check if pdfinfo.exe exists in the bin directory
             if (Test-Path "poppler\bin\pdfinfo.exe") {
-              echo "Poppler binaries copied successfully"
+              echo "Poppler downloaded and extracted successfully"
             } else {
               echo "Failed to find pdfinfo.exe in the bin directory"
               exit 1
             }
             
-            # Find and copy the lib directory if it exists
+            # Find and copy DLLs to bin directory
+            # First check if there's a lib directory
             $libDir = Get-ChildItem -Path "temp_poppler" -Recurse -Directory | Where-Object { $_.Name -eq "lib" } | Select-Object -First 1
             
             if ($libDir) {
               Write-Host "Found lib directory at: $($libDir.FullName)"
-              
-              # Create lib directory if it doesn't exist
-              if (-not (Test-Path "poppler\lib")) {
-                mkdir -p "poppler\lib"
-              }
-              
-              # Copy all DLLs from the lib directory
-              Copy-Item -Path "$($libDir.FullName)\*.dll" -Destination "poppler\lib\" -Force
-              
-              # List all copied libraries
-              Write-Host "Libraries in poppler\lib:"
-              Get-ChildItem -Path "poppler\lib" | Format-Table Name, Length
-            } else {
-              # If no lib directory is found, check if DLLs are in the bin directory
-              $dlls = Get-ChildItem -Path "poppler\bin" -Filter "*.dll"
-              
-              if ($dlls.Count -gt 0) {
-                Write-Host "Found DLLs in bin directory, copying to lib directory"
-                
-                # Create lib directory
-                if (-not (Test-Path "poppler\lib")) {
-                  mkdir -p "poppler\lib"
-                }
-                
-                # Copy DLLs to lib directory
-                Copy-Item -Path "poppler\bin\*.dll" -Destination "poppler\lib\" -Force
-                
-                # List all copied libraries
-                Write-Host "Libraries in poppler\lib:"
-                Get-ChildItem -Path "poppler\lib" | Format-Table Name, Length
-              } else {
-                Write-Host "No DLLs found in bin directory, checking parent directories"
-                
-                # Look for DLLs in parent directories
-                $parentDlls = Get-ChildItem -Path "temp_poppler" -Recurse -Filter "*.dll"
-                
-                if ($parentDlls.Count -gt 0) {
-                  Write-Host "Found DLLs in parent directories, copying to lib directory"
-                  
-                  # Create lib directory
-                  if (-not (Test-Path "poppler\lib")) {
-                    mkdir -p "poppler\lib"
-                  }
-                  
-                  # Copy DLLs to lib directory
-                  foreach ($dll in $parentDlls) {
-                    Copy-Item -Path $dll.FullName -Destination "poppler\lib\" -Force
-                  }
-                  
-                  # List all copied libraries
-                  Write-Host "Libraries in poppler\lib:"
-                  Get-ChildItem -Path "poppler\lib" | Format-Table Name, Length
-                } else {
-                  Write-Host "Warning: No DLLs found in the extracted content"
-                }
+              # Copy all DLLs from the lib directory to bin
+              Copy-Item -Path "$($libDir.FullName)\*.dll" -Destination "poppler\bin\" -Force
+            }
+            
+            # Also check for DLLs in other directories
+            $allDlls = Get-ChildItem -Path "temp_poppler" -Recurse -Filter "*.dll"
+            foreach ($dll in $allDlls) {
+              if (-not (Test-Path "poppler\bin\$($dll.Name)")) {
+                Write-Host "Copying $($dll.FullName) to poppler\bin"
+                Copy-Item -Path $dll.FullName -Destination "poppler\bin\" -Force
               }
             }
+            
+            # List all files in bin directory
+            Write-Host "Files in poppler\bin:"
+            Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
           } else {
             echo "No bin directory found in the extracted content"
             exit 1
@@ -200,7 +160,6 @@ jobs:
 
           # Create directory structure for bundling
           mkdir -p poppler/bin
-          mkdir -p poppler/lib
 
           # Copy Poppler binaries to our directory
           cp $(which pdfinfo) poppler/bin/
@@ -211,10 +170,10 @@ jobs:
           POPPLER_PREFIX=$(brew --prefix poppler)
           echo "Poppler installation directory: $POPPLER_PREFIX"
 
-          # Copy the main Poppler library and its direct dependencies
-          cp "$POPPLER_PREFIX/lib/libpoppler"*.dylib poppler/lib/
+          # Copy the main Poppler library and its direct dependencies directly to bin directory
+          cp "$POPPLER_PREFIX/lib/libpoppler"*.dylib poppler/bin/
 
-          # Copy other critical dependencies
+          # Copy other critical dependencies to bin directory
           DEPS=(
             "freetype/lib/libfreetype"
             "fontconfig/lib/libfontconfig"
@@ -229,12 +188,12 @@ jobs:
             DEP_PREFIX=$(brew --prefix $(echo $dep | cut -d/ -f1))
             DEP_PATH="$DEP_PREFIX/$(echo $dep | cut -d/ -f2-)"
             echo "Copying dependency from $DEP_PATH*.dylib"
-            cp $DEP_PATH*.dylib poppler/lib/ || echo "Warning: Could not copy $DEP_PATH"
+            cp $DEP_PATH*.dylib poppler/bin/ || echo "Warning: Could not copy $DEP_PATH"
           done
 
           # List all copied libraries
-          echo "Libraries in poppler/lib:"
-          ls -la poppler/lib/
+          echo "Libraries in poppler/bin:"
+          ls -la poppler/bin/
 
           # Verify the binaries
           if [ -f "poppler/bin/pdfinfo" ]; then
@@ -285,14 +244,14 @@ jobs:
             
           # Ensure the lib directory is properly included in the app bundle
           echo "Copying Poppler libraries to the app bundle..."
-          mkdir -p "macOSBuild/main.app/Contents/MacOS/poppler/lib"
-          cp -R poppler/lib/* "macOSBuild/main.app/Contents/MacOS/poppler/lib/"
+          mkdir -p "macOSBuild/main.app/Contents/MacOS/poppler/bin"
+          cp -R poppler/bin/* "macOSBuild/main.app/Contents/MacOS/poppler/bin/"
 
           # List the contents to verify
           echo "Contents of app bundle poppler directory:"
           ls -la "macOSBuild/main.app/Contents/MacOS/poppler"
-          echo "Contents of app bundle poppler/lib directory:"
-          ls -la "macOSBuild/main.app/Contents/MacOS/poppler/lib"
+          echo "Contents of app bundle poppler/bin directory:"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler/bin"
 
           mv "macOSBuild/main.app" "macOSBuild/BDRC Tibetan OCR.app"
 
@@ -397,13 +356,13 @@ jobs:
           # Check if there are DLLs in the bin directory
           $dlls = Get-ChildItem -Path "poppler\bin" -Filter "*.dll"
           if ($dlls.Count -gt 0) {
-            Write-Host "Found DLLs in bin directory, copying to lib directory"
-            Copy-Item -Path "poppler\bin\*.dll" -Destination "poppler\lib\" -Force
+            Write-Host "Found DLLs in bin directory, copying to bin directory"
+            Copy-Item -Path "poppler\bin\*.dll" -Destination "poppler\bin\" -Force
           }
 
-          # List all libraries in the lib directory
-          Write-Host "Libraries in poppler\lib:"
-          Get-ChildItem -Path "poppler\lib" | Format-Table Name, Length
+          # List all libraries in the bin directory
+          Write-Host "Libraries in poppler\bin:"
+          Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
 
           # Build the application
           python -m nuitka --standalone `
@@ -427,7 +386,6 @@ jobs:
           # Verify the Poppler binaries are in the correct location
           $distDir = "WindowsBuild\main.dist"
           $popplerBinDir = "$distDir\poppler\bin"
-          $popplerLibDir = "$distDir\poppler\lib"
 
           Write-Host "Checking Poppler directories in the build..."
 
@@ -438,15 +396,9 @@ jobs:
             Write-Host "Poppler bin directory not found in build, creating it..."
             New-Item -ItemType Directory -Path $popplerBinDir -Force
             Copy-Item -Path "poppler\bin\*" -Destination $popplerBinDir -Recurse -Force
-          }
-
-          if (Test-Path $popplerLibDir) {
-            Write-Host "Poppler lib directory exists in build"
-            Get-ChildItem -Path $popplerLibDir | Format-Table Name, Length
-          } else {
-            Write-Host "Poppler lib directory not found in build, creating it..."
-            New-Item -ItemType Directory -Path $popplerLibDir -Force
-            Copy-Item -Path "poppler\lib\*" -Destination $popplerLibDir -Recurse -Force
+            
+            Write-Host "Copied Poppler files to build:"
+            Get-ChildItem -Path $popplerBinDir | Format-Table Name, Length
           }
 
       - name: Upload artifact

@@ -335,16 +335,6 @@ class AppView(QWidget):
             if os.path.exists(pdfinfo_path):
                 print(f"Found Poppler at: {poppler_path}")
                 
-                # Handle library paths for different platforms
-                lib_dir = os.path.join(base_path, 'poppler', 'lib')
-                if os.path.exists(lib_dir):
-                    if platform.system() == 'Windows':
-                        os.environ['PATH'] = lib_dir + os.pathsep + os.environ['PATH']
-                        print(f"Added Poppler lib directory to PATH: {lib_dir}")
-                    elif platform.system() == 'Darwin':
-                        os.environ['DYLD_LIBRARY_PATH'] = lib_dir
-                        print(f"Added Poppler lib directory to DYLD_LIBRARY_PATH: {lib_dir}")
-                
                 # Cache the result
                 self._poppler_path = poppler_path
                 return poppler_path
