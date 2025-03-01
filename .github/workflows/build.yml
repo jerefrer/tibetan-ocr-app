@@ -2,6 +2,7 @@ name: MacOS Build and Sign
 
 on:
   push:
+    branches: [build-on-push]
     tags:
       - "v*"
   workflow_dispatch:
