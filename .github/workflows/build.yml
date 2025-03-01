@@ -242,11 +242,12 @@ jobs:
             --include-data-dir=./poppler=poppler \
             main.py
             
-          # Ensure the lib directory is properly included in the app bundle
-          echo "Copying Poppler libraries to the app bundle..."
-          mkdir -p "macOSBuild/main.app/Contents/MacOS/poppler/bin"
-          cp -R poppler/bin/* "macOSBuild/main.app/Contents/MacOS/poppler/bin/"
-
+          # Make the Poppler binaries executable
+          echo "Making Poppler binaries executable..."
+          chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdfinfo"
+          chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftoppm"
+          chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftotext"
+          
           # List the contents to verify
           echo "Contents of app bundle poppler directory:"
           ls -la "macOSBuild/main.app/Contents/MacOS/poppler"
