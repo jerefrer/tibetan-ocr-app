@@ -213,7 +213,7 @@ jobs:
 
           # Copy the main Poppler library and its direct dependencies
           cp "$POPPLER_PREFIX/lib/libpoppler"*.dylib poppler/lib/
-          
+
           # Copy other critical dependencies
           DEPS=(
             "freetype/lib/libfreetype"
@@ -224,7 +224,7 @@ jobs:
             "libpng/lib/libpng16"
             "libtiff/lib/libtiff"
           )
-          
+
           for dep in "${DEPS[@]}"; do
             DEP_PREFIX=$(brew --prefix $(echo $dep | cut -d/ -f1))
             DEP_PATH="$DEP_PREFIX/$(echo $dep | cut -d/ -f2-)"
@@ -282,6 +282,17 @@ jobs:
             --include-data-dir=./Models=Models \
             --include-data-dir=./poppler=poppler \
             main.py
+            
+          # Ensure the lib directory is properly included in the app bundle
+          echo "Copying Poppler libraries to the app bundle..."
+          mkdir -p "macOSBuild/main.app/Contents/MacOS/poppler/lib"
+          cp -R poppler/lib/* "macOSBuild/main.app/Contents/MacOS/poppler/lib/"
+
+          # List the contents to verify
+          echo "Contents of app bundle poppler directory:"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler"
+          echo "Contents of app bundle poppler/lib directory:"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler/lib"
 
           mv "macOSBuild/main.app" "macOSBuild/BDRC Tibetan OCR.app"
 
@@ -378,6 +389,23 @@ jobs:
       - name: Build with Nuitka (Windows)
         if: ${{ runner.os == 'Windows' }}
         run: |
+          # Create lib directory if it doesn't exist
+          if (-not (Test-Path "poppler\lib")) {
+            mkdir -p "poppler\lib"
+          }
+
+          # Check if there are DLLs in the bin directory
+          $dlls = Get-ChildItem -Path "poppler\bin" -Filter "*.dll"
+          if ($dlls.Count -gt 0) {
+            Write-Host "Found DLLs in bin directory, copying to lib directory"
+            Copy-Item -Path "poppler\bin\*.dll" -Destination "poppler\lib\" -Force
+          }
+
+          # List all libraries in the lib directory
+          Write-Host "Libraries in poppler\lib:"
+          Get-ChildItem -Path "poppler\lib" | Format-Table Name, Length
+
+          # Build the application
           python -m nuitka --standalone `
             --onefile `
             --windows-console-mode=disable `
@@ -387,7 +415,7 @@ jobs:
             --plugin-enable=pyside6 `
             --windows-icon-from-ico=logo.ico `
             --company-name="Buddhist Digital Resource Center" `
-            --product-name="Tibetan OCR App" `
+            --product-name="BDRC Tibetan OCR" `
             --file-version='${{ env.VERSION }}' `
             --product-version='${{ env.VERSION }}' `
             --assume-yes-for-downloads `
@@ -395,6 +423,31 @@ jobs:
             --include-data-dir=./Models=Models `
             --include-data-dir=./poppler=poppler `
             main.py
+            
+          # Verify the Poppler binaries are in the correct location
+          $distDir = "WindowsBuild\main.dist"
+          $popplerBinDir = "$distDir\poppler\bin"
+          $popplerLibDir = "$distDir\poppler\lib"
+
+          Write-Host "Checking Poppler directories in the build..."
+
+          if (Test-Path $popplerBinDir) {
+            Write-Host "Poppler bin directory exists in build"
+            Get-ChildItem -Path $popplerBinDir | Format-Table Name, Length
+          } else {
+            Write-Host "Poppler bin directory not found in build, creating it..."
+            New-Item -ItemType Directory -Path $popplerBinDir -Force
+            Copy-Item -Path "poppler\bin\*" -Destination $popplerBinDir -Recurse -Force
+          }
+
+          if (Test-Path $popplerLibDir) {
+            Write-Host "Poppler lib directory exists in build"
+            Get-ChildItem -Path $popplerLibDir | Format-Table Name, Length
+          } else {
+            Write-Host "Poppler lib directory not found in build, creating it..."
+            New-Item -ItemType Directory -Path $popplerLibDir -Force
+            Copy-Item -Path "poppler\lib\*" -Destination $popplerLibDir -Recurse -Force
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
