@@ -247,28 +247,19 @@ jobs:
           chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdfinfo"
           chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftoppm"
           chmod +x "macOSBuild/main.app/Contents/MacOS/poppler/bin/pdftotext"
-          
-          # Copy the library files to the app bundle
-          echo "Copying Poppler library files to the app bundle..."
-          cp poppler/bin/*.dylib "macOSBuild/main.app/Contents/MacOS/poppler/bin/"
-          
-          # Verify the dylib files are present and copy them again if needed
-          echo "Verifying dylib files in app bundle..."
-          if [ ! -f "macOSBuild/main.app/Contents/MacOS/poppler/bin/libpoppler.dylib" ]; then
-            echo "Warning: libpoppler.dylib not found in app bundle, trying alternative copy method..."
-            # Try to find the dylib files in the Homebrew installation
-            POPPLER_BREW_PATH=$(brew --prefix poppler)
-            if [ -d "$POPPLER_BREW_PATH/lib" ]; then
-              echo "Copying from Homebrew lib directory: $POPPLER_BREW_PATH/lib"
-              cp $POPPLER_BREW_PATH/lib/*.dylib "macOSBuild/main.app/Contents/MacOS/poppler/bin/"
-            fi
-          fi
-          
+
+          # Create lib directory and copy the library files to the correct location
+          echo "Creating lib directory and copying Poppler library files..."
+          mkdir -p "macOSBuild/main.app/Contents/MacOS/poppler/lib"
+          cp poppler/bin/*.dylib "macOSBuild/main.app/Contents/MacOS/poppler/lib/"
+
           # List the contents to verify
           echo "Contents of app bundle poppler directory:"
           ls -la "macOSBuild/main.app/Contents/MacOS/poppler"
           echo "Contents of app bundle poppler/bin directory:"
           ls -la "macOSBuild/main.app/Contents/MacOS/poppler/bin"
+          echo "Contents of app bundle poppler/lib directory:"
+          ls -la "macOSBuild/main.app/Contents/MacOS/poppler/lib"
 
           mv "macOSBuild/main.app" "macOSBuild/BDRC Tibetan OCR.app"
 
@@ -368,7 +359,7 @@ jobs:
           # List all files in bin directory
           Write-Host "Files in poppler\bin:"
           Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
-          
+
           # Build the application
           python -m nuitka --standalone `
             --onefile `
@@ -391,20 +382,29 @@ jobs:
           # Verify the Poppler binaries are in the correct location
           $distDir = "WindowsBuild\main.dist"
           $popplerBinDir = "$distDir\poppler\bin"
-          
+          $popplerLibDir = "$distDir\poppler\lib"
+
           Write-Host "Checking Poppler directories in the build..."
-          
+
           if (Test-Path $popplerBinDir) {
             Write-Host "Poppler bin directory exists in build"
             Get-ChildItem -Path $popplerBinDir | Format-Table Name, Length
           } else {
             Write-Host "Poppler bin directory not found in build, creating it..."
             New-Item -ItemType Directory -Path $popplerBinDir -Force
-            Copy-Item -Path "poppler\bin\*" -Destination $popplerBinDir -Recurse -Force
+            Copy-Item -Path "poppler\bin\*.exe" -Destination $popplerBinDir -Force
             
-            Write-Host "Copied Poppler files to build:"
+            Write-Host "Copied Poppler executables to build:"
             Get-ChildItem -Path $popplerBinDir | Format-Table Name, Length
           }
+
+          # Create lib directory and copy DLL files
+          Write-Host "Creating lib directory and copying DLL files..."
+          New-Item -ItemType Directory -Path $popplerLibDir -Force
+          Copy-Item -Path "poppler\bin\*.dll" -Destination $popplerLibDir -Force
+
+          Write-Host "Copied DLL files to lib directory:"
+          Get-ChildItem -Path $popplerLibDir | Format-Table Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
