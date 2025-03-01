@@ -348,22 +348,10 @@ jobs:
       - name: Build with Nuitka (Windows)
         if: ${{ runner.os == 'Windows' }}
         run: |
-          # Create lib directory if it doesn't exist
-          if (-not (Test-Path "poppler\lib")) {
-            mkdir -p "poppler\lib"
-          }
-
-          # Check if there are DLLs in the bin directory
-          $dlls = Get-ChildItem -Path "poppler\bin" -Filter "*.dll"
-          if ($dlls.Count -gt 0) {
-            Write-Host "Found DLLs in bin directory, copying to bin directory"
-            Copy-Item -Path "poppler\bin\*.dll" -Destination "poppler\bin\" -Force
-          }
-
-          # List all libraries in the bin directory
-          Write-Host "Libraries in poppler\bin:"
+          # List all files in bin directory
+          Write-Host "Files in poppler\bin:"
           Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
-
+          
           # Build the application
           python -m nuitka --standalone `
             --onefile `
@@ -386,9 +374,9 @@ jobs:
           # Verify the Poppler binaries are in the correct location
           $distDir = "WindowsBuild\main.dist"
           $popplerBinDir = "$distDir\poppler\bin"
-
+          
           Write-Host "Checking Poppler directories in the build..."
-
+          
           if (Test-Path $popplerBinDir) {
             Write-Host "Poppler bin directory exists in build"
             Get-ChildItem -Path $popplerBinDir | Format-Table Name, Length
