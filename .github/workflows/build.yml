@@ -430,7 +430,6 @@ jobs:
             --include-data-dir=Assets=Assets `
             --include-data-dir=Models=Models `
             --include-data-files=poppler/bin/*=poppler/bin/ `
-            --include-package-data=pdf2image `
             main.py
 
       - name: Upload artifact
