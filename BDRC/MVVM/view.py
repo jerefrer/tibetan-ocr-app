@@ -170,6 +170,9 @@ class AppView(QWidget):
         else:
             self.ocr_pipeline = None
 
+        # Memoized poppler path
+        self._poppler_path = None
+
         self.show()
 
     def handle_file_import(self):
@@ -220,7 +223,11 @@ class AppView(QWidget):
                         image_paths = []
 
                         # Get the page count first using pdfinfo
-                        pdf_info = pdfinfo_from_path(file_path)
+                        poppler_path = self.get_poppler_path()
+                        if not poppler_path:
+                            return
+                            
+                        pdf_info = pdfinfo_from_path(file_path, poppler_path=poppler_path)
                         total_pages = pdf_info['Pages']
 
                         # Create progress dialog
@@ -245,6 +252,7 @@ class AppView(QWidget):
                                 dpi=300, 
                                 first_page=batch_start, 
                                 last_page=batch_end,
+                                poppler_path=poppler_path
                             )
                             
                             # Save each page
@@ -390,3 +398,43 @@ class AppView(QWidget):
         else:
             line_model_config = self._settingsview_model.get_line_model()
             self.ocr_pipeline = OCRPipeline(self.platform, ocr_model.config, line_model_config)
+
+    def get_poppler_path(self):
+        # Return cached path if we've already found it
+        if self._poppler_path is not None:
+            return self._poppler_path
+            
+        try:
+            # Determine base path depending on whether we're running from a bundled app or in development
+            if getattr(sys, 'frozen', False):
+                # Running in a bundled app
+                base_path = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
+                print(f"Running from bundled app, base path: {base_path}")
+            else:
+                # Running in development mode
+                base_path = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                print(f"Running in development mode, base path: {base_path}")
+            
+            # Poppler is always in ./poppler/bin
+            poppler_path = os.path.join(base_path, 'poppler', 'bin')
+            print(f"Looking for Poppler at: {poppler_path}")
+            
+            # Check if pdfinfo exists in this path
+            pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
+            if platform.system() == 'Windows':
+                pdfinfo_path += '.exe'
+            
+            print(f"Checking for pdfinfo at: {pdfinfo_path}")
+            if os.path.exists(pdfinfo_path):
+                print(f"Found Poppler at: {poppler_path}")
+                
+                # Cache the result
+                self._poppler_path = poppler_path
+                return poppler_path
+            else:
+                QMessageBox.critical(self, "Error", f"Poppler binaries not found at expected location: {poppler_path}")
+                print(f"Poppler binaries not found at expected location: {poppler_path}")
+                return None
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error finding Poppler: {e}")
+            return None
