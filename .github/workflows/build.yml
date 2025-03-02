@@ -161,34 +161,42 @@ jobs:
           # Create poppler directory structure
           mkdir -p poppler/bin
           mkdir -p poppler/lib
+          
+          # Ensure we have write permissions
+          chmod -R 755 poppler
 
           # Copy binaries from Homebrew
-          cp $(brew --prefix poppler)/bin/pdfinfo poppler/bin/
-          cp $(brew --prefix poppler)/bin/pdftoppm poppler/bin/
-          cp $(brew --prefix poppler)/bin/pdftotext poppler/bin/
+          cp $(brew --prefix poppler)/bin/pdfinfo poppler/bin/ || echo "Warning: Could not copy pdfinfo"
+          cp $(brew --prefix poppler)/bin/pdftoppm poppler/bin/ || echo "Warning: Could not copy pdftoppm"
+          cp $(brew --prefix poppler)/bin/pdftotext poppler/bin/ || echo "Warning: Could not copy pdftotext"
 
           # Copy dependencies
           echo "Copying dependencies"
-          cp $(brew --prefix freetype)/lib/libfreetype*.dylib poppler/lib/
-          cp $(brew --prefix fontconfig)/lib/libfontconfig*.dylib poppler/lib/
-          cp $(brew --prefix jpeg-turbo)/lib/libjpeg*.dylib poppler/lib/
-          cp $(brew --prefix openjpeg)/lib/libopenjp2*.dylib poppler/lib/
-          cp $(brew --prefix little-cms2)/lib/liblcms2*.dylib poppler/lib/
-          cp $(brew --prefix libpng)/lib/libpng16*.dylib poppler/lib/
-          cp $(brew --prefix libtiff)/lib/libtiff*.dylib poppler/lib/
-          cp $(brew --prefix poppler)/lib/libpoppler*.dylib poppler/lib/
+          cp $(brew --prefix freetype)/lib/libfreetype*.dylib poppler/lib/ || echo "Warning: Could not copy libfreetype"
+          cp $(brew --prefix fontconfig)/lib/libfontconfig*.dylib poppler/lib/ || echo "Warning: Could not copy libfontconfig"
+          cp $(brew --prefix jpeg-turbo)/lib/libjpeg*.dylib poppler/lib/ || echo "Warning: Could not copy libjpeg"
+          cp $(brew --prefix openjpeg)/lib/libopenjp2*.dylib poppler/lib/ || echo "Warning: Could not copy libopenjp2"
+          cp $(brew --prefix little-cms2)/lib/liblcms2*.dylib poppler/lib/ || echo "Warning: Could not copy liblcms2"
+          cp $(brew --prefix libpng)/lib/libpng16*.dylib poppler/lib/ || echo "Warning: Could not copy libpng16"
+          cp $(brew --prefix libtiff)/lib/libtiff*.dylib poppler/lib/ || echo "Warning: Could not copy libtiff"
+          cp $(brew --prefix poppler)/lib/libpoppler*.dylib poppler/lib/ || echo "Warning: Could not copy libpoppler"
           
           # Add additional dependencies that might be required
-          cp $(brew --prefix gpgme)/lib/libgpgme*.dylib poppler/lib/
-          cp $(brew --prefix gpgme)/lib/libgpgmepp*.dylib poppler/lib/
-          cp $(brew --prefix nss)/lib/libnss*.dylib poppler/lib/ || true
-          cp $(brew --prefix nspr)/lib/libnspr*.dylib poppler/lib/ || true
+          # Use sudo for gpgme libraries which might have permission issues
+          sudo cp $(brew --prefix gpgme)/lib/libgpgme*.dylib poppler/lib/ || echo "Warning: Could not copy libgpgme"
+          sudo cp $(brew --prefix gpgme)/lib/libgpgmepp*.dylib poppler/lib/ || echo "Warning: Could not copy libgpgmepp"
+          sudo chown $(whoami) poppler/lib/libgpgme*.dylib poppler/lib/libgpgmepp*.dylib || echo "Warning: Could not change ownership"
+          
+          cp $(brew --prefix nss)/lib/libnss*.dylib poppler/lib/ || echo "Warning: Could not copy libnss"
+          cp $(brew --prefix nspr)/lib/libnspr*.dylib poppler/lib/ || echo "Warning: Could not copy libnspr"
           
           # Run otool to identify any other dependencies we might need
           echo "Checking for additional dependencies..."
           for lib in poppler/lib/*.dylib; do
-            echo "Dependencies for $lib:"
-            otool -L "$lib" | grep -v "@rpath" | grep -v "$lib" | grep "/"
+            if [ -f "$lib" ]; then
+              echo "Dependencies for $lib:"
+              otool -L "$lib" | grep -v "@rpath" | grep -v "$lib" | grep "/"
+            fi
           done
 
           echo "Libraries in poppler/lib:"
@@ -259,7 +267,7 @@ jobs:
             install_name_tool -id "@executable_path/../lib/$basename" "$dylib"
             
             # Find all dependencies of this dylib
-            deps=$(otool -L "$dylib" | grep -v "@executable_path" | grep -v ":" | awk '{print $1}')
+            deps=$(otool -L "$dylib" | grep -v ":" | awk '{print $1}')
             
             # For each dependency, if it's one of our libraries, update its path
             for dep in $deps; do
