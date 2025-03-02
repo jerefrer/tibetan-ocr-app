@@ -88,6 +88,7 @@ jobs:
         run: |
           # Create directory for Poppler
           mkdir -p poppler
+          mkdir -p poppler\bin
 
           # Get the latest release information from GitHub API
           $latestRelease = (Invoke-RestMethod -Uri "https://api.github.com/repos/oschwartz10612/poppler-windows/releases/latest")
@@ -104,45 +105,30 @@ jobs:
           mkdir -p temp_poppler
           Expand-Archive -Path "poppler.zip" -DestinationPath "temp_poppler" -Force
 
-          # Find the Library folder in the extracted content
-          $libraryPath = Get-ChildItem -Path "temp_poppler" -Directory | 
-                         Where-Object { $_.Name -eq "Library" } | 
-                         Select-Object -First 1
+          # Find pdfinfo.exe anywhere in the extracted content
+          Write-Host "Searching for pdfinfo.exe in the extracted content..."
+          $pdfInfoExe = Get-ChildItem -Path "temp_poppler" -Recurse -Filter "pdfinfo.exe" | Select-Object -First 1
 
-          if ($libraryPath) {
-            Write-Host "Found Library folder at: $($libraryPath.FullName)"
+          if ($pdfInfoExe) {
+            $binDir = $pdfInfoExe.Directory
+            Write-Host "Found pdfinfo.exe at: $($pdfInfoExe.FullName)"
+            Write-Host "Bin directory: $($binDir.FullName)"
             
-            # Find the bin folder inside the Library folder
-            $binPath = Get-ChildItem -Path $libraryPath.FullName -Directory | 
-                       Where-Object { $_.Name -eq "bin" } | 
-                       Select-Object -First 1
+            # Copy all files from the bin directory to poppler/bin
+            Write-Host "Copying all files from $($binDir.FullName) to poppler\bin..."
+            Copy-Item -Path "$($binDir.FullName)\*" -Destination "poppler\bin\" -Force
             
-            if ($binPath) {
-              Write-Host "Found bin folder at: $($binPath.FullName)"
-              
-              # Create bin directory under poppler
-              mkdir -p poppler\bin
-              
-              # Copy all files from Library/bin to poppler/bin
-              Copy-Item -Path "$($binPath.FullName)\*" -Destination "poppler\bin\" -Recurse -Force
-              
-              # Check if pdfinfo.exe exists in the bin directory
-              if (Test-Path "poppler\bin\pdfinfo.exe") {
-                echo "Poppler downloaded and extracted successfully"
-              } else {
-                echo "Failed to find pdfinfo.exe in the bin directory"
-                exit 1
-              }
-              
-              # List all files in bin directory
-              Write-Host "Files in poppler\bin:"
+            # Verify that files were copied successfully
+            if (Test-Path "poppler\bin\pdfinfo.exe") {
+              Write-Host "Poppler binaries copied successfully."
+              Write-Host "Final list of files in poppler\bin:"
               Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
             } else {
-              echo "No bin folder found inside the Library folder"
+              Write-Error "Failed to copy files to poppler\bin\"
               exit 1
             }
           } else {
-            echo "No Library folder found in the extracted content"
+            Write-Error "Could not find pdfinfo.exe in the extracted content"
             exit 1
           }
 
@@ -443,7 +429,8 @@ jobs:
             --assume-yes-for-downloads `
             --include-data-dir=Assets=Assets `
             --include-data-dir=Models=Models `
-            --include-data-files="poppler/bin/*.*=poppler/bin/" `
+            --include-data-files=poppler/bin/*=poppler/bin/ `
+            --include-package-data=pdf2image `
             main.py
 
       - name: Upload artifact
