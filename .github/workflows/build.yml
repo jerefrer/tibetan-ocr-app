@@ -177,6 +177,19 @@ jobs:
           cp $(brew --prefix libpng)/lib/libpng16*.dylib poppler/lib/
           cp $(brew --prefix libtiff)/lib/libtiff*.dylib poppler/lib/
           cp $(brew --prefix poppler)/lib/libpoppler*.dylib poppler/lib/
+          
+          # Add additional dependencies that might be required
+          cp $(brew --prefix gpgme)/lib/libgpgme*.dylib poppler/lib/
+          cp $(brew --prefix gpgme)/lib/libgpgmepp*.dylib poppler/lib/
+          cp $(brew --prefix nss)/lib/libnss*.dylib poppler/lib/ || true
+          cp $(brew --prefix nspr)/lib/libnspr*.dylib poppler/lib/ || true
+          
+          # Run otool to identify any other dependencies we might need
+          echo "Checking for additional dependencies..."
+          for lib in poppler/lib/*.dylib; do
+            echo "Dependencies for $lib:"
+            otool -L "$lib" | grep -v "@rpath" | grep -v "$lib" | grep "/"
+          done
 
           echo "Libraries in poppler/lib:"
           ls -la poppler/lib
