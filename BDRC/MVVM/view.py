@@ -225,7 +225,6 @@ class AppView(QWidget):
 
                         poppler_path = self.get_poppler_path()
                         if not poppler_path:
-                            QMessageBox.critical(self, "Error", "Poppler binaries not found. Cannot process PDF files.")
                             return
 
                         # Open the PDF file with pdf2image
@@ -320,18 +319,22 @@ class AppView(QWidget):
             if getattr(sys, 'frozen', False):
                 # Running in a bundled app
                 base_path = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
+                print(f"Running from bundled app, base path: {base_path}")
             else:
                 # Running in development mode
                 base_path = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                print(f"Running in development mode, base path: {base_path}")
             
             # Poppler is always in ./poppler/bin
             poppler_path = os.path.join(base_path, 'poppler', 'bin')
+            print(f"Looking for Poppler at: {poppler_path}")
             
             # Check if pdfinfo exists in this path
             pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
             if platform.system() == 'Windows':
                 pdfinfo_path += '.exe'
             
+            print(f"Checking for pdfinfo at: {pdfinfo_path}")
             if os.path.exists(pdfinfo_path):
                 print(f"Found Poppler at: {poppler_path}")
                 
@@ -339,10 +342,21 @@ class AppView(QWidget):
                 self._poppler_path = poppler_path
                 return poppler_path
             else:
+                QMessageBox.critical(self, "Error", f"Poppler binaries not found at expected location: {poppler_path}")
                 print(f"Poppler binaries not found at expected location: {poppler_path}")
+
+                # On Windows, try to find pdfinfo.exe anywhere in the application directory
+                if platform.system() == 'Windows':
+                    for root, dirs, files in os.walk(base_path):
+                        if 'pdfinfo.exe' in files:
+                            poppler_path = root
+                            QMessageBox.information(self, "Error", f"Found pdfinfo.exe in: {poppler_path}")
+                            self._poppler_path = poppler_path
+                            return poppler_path
+
                 return None
         except Exception as e:
-            print(f"Error finding Poppler: {e}")
+            QMessageBox.critical(self, "Error", f"Error finding Poppler: {e}")
             return None
 
     def import_files(self, results: Dict[UUID, OCRData]):
