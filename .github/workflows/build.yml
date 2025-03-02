@@ -201,6 +201,8 @@ jobs:
           # Copy NSPR libraries
           echo "Copying NSPR libraries..."
           cp $(brew --prefix nspr)/lib/libnspr4.dylib poppler/lib/ || echo "Warning: Could not copy libnspr4"
+          cp $(brew --prefix nspr)/lib/libplds4.dylib poppler/lib/ || echo "Warning: Could not copy libplds4"
+          cp $(brew --prefix nspr)/lib/libplc4.dylib poppler/lib/ || echo "Warning: Could not copy libplc4"
 
           # Run otool to identify any other dependencies we might need
           echo "Checking for additional dependencies..."
