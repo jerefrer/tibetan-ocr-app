@@ -1,14 +1,13 @@
-import os
 import cv2
 import sys
 import re
 import platform
+import os
 from uuid import UUID
 from typing import Dict, List
 from PySide6.QtCore import Signal, Qt, QThreadPool
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLabel, QMessageBox
-from BDRC.utils.pdf_utils import convert_from_path, run_hidden_process
-import platform
+from pdf2image import convert_from_path, pdfinfo_from_path
 from BDRC.Styles import DARK
 from BDRC.Inference import OCRPipeline
 from BDRC.Data import OpStatus, Platform, OCRData, OCRModel, OCResult
@@ -171,9 +170,6 @@ class AppView(QWidget):
         else:
             self.ocr_pipeline = None
 
-        # Memoized poppler path
-        self._poppler_path = None
-
         self.show()
 
     def handle_file_import(self):
@@ -223,26 +219,10 @@ class AppView(QWidget):
                         imported_data = {}
                         image_paths = []
 
-                        poppler_path = self.get_poppler_path()
-                        if not poppler_path:
-                            return
-
                         # Get the page count first using pdfinfo
-                        pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
-                        if platform.system() == 'Windows':
-                            pdfinfo_path += '.exe'
-                        
-                        # Use our utility function to run the process with hidden window on Windows
-                        result = run_hidden_process([pdfinfo_path, file_path], capture_output=True, text=True)
-                        match = re.search(r'Pages:\s+(\d+)', result.stdout)
-                        if match:
-                            total_pages = int(match.group(1))
-                            print(f"PDF has {total_pages} pages")
-                        else:
-                            # If we can't determine page count, exit with error
-                            QMessageBox.critical(self, "Error", "Failed to determine PDF page count. Poppler may not be installed correctly.")
-                            return
-                            
+                        pdf_info = pdfinfo_from_path(file_path)
+                        total_pages = pdf_info['Pages']
+
                         # Create progress dialog
                         progress = ImportFilesProgress("Reading PDF file...", max_length=total_pages)
                         progress.setWindowModality(Qt.WindowModality.WindowModal)
@@ -265,7 +245,6 @@ class AppView(QWidget):
                                 dpi=300, 
                                 first_page=batch_start, 
                                 last_page=batch_end,
-                                poppler_path=poppler_path
                             )
                             
                             # Save each page
@@ -291,56 +270,6 @@ class AppView(QWidget):
                 else:
                     error_dialog = NotificationDialog("Invalid file", "The selected file is not a valid file.")
                     error_dialog.exec_()
-
-    def get_poppler_path(self):
-        # Return cached path if we've already found it
-        if self._poppler_path is not None:
-            return self._poppler_path
-            
-        try:
-            # Determine base path depending on whether we're running from a bundled app or in development
-            if getattr(sys, 'frozen', False):
-                # Running in a bundled app
-                base_path = sys._MEIPASS if hasattr(sys, '_MEIPASS') else os.path.dirname(sys.executable)
-                print(f"Running from bundled app, base path: {base_path}")
-            else:
-                # Running in development mode
-                base_path = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-                print(f"Running in development mode, base path: {base_path}")
-            
-            # Poppler is always in ./poppler/bin
-            poppler_path = os.path.join(base_path, 'poppler', 'bin')
-            print(f"Looking for Poppler at: {poppler_path}")
-            
-            # Check if pdfinfo exists in this path
-            pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
-            if platform.system() == 'Windows':
-                pdfinfo_path += '.exe'
-            
-            print(f"Checking for pdfinfo at: {pdfinfo_path}")
-            if os.path.exists(pdfinfo_path):
-                print(f"Found Poppler at: {poppler_path}")
-                
-                # Cache the result
-                self._poppler_path = poppler_path
-                return poppler_path
-            else:
-                QMessageBox.critical(self, "Error", f"Poppler binaries not found at expected location: {poppler_path}")
-                print(f"Poppler binaries not found at expected location: {poppler_path}")
-
-                # On Windows, try to find pdfinfo.exe anywhere in the application directory
-                if platform.system() == 'Windows':
-                    for root, dirs, files in os.walk(base_path):
-                        if 'pdfinfo.exe' in files:
-                            poppler_path = root
-                            QMessageBox.information(self, "Error", f"Found pdfinfo.exe in: {poppler_path}")
-                            self._poppler_path = poppler_path
-                            return poppler_path
-
-                return None
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error finding Poppler: {e}")
-            return None
 
     def import_files(self, results: Dict[UUID, OCRData]):
         self._dataview_model.add_data(results)
