@@ -164,54 +164,64 @@ jobs:
 
           # Ensure we have write permissions
           chmod -R 755 poppler
-
+          
           # Copy binaries from Homebrew
           cp $(brew --prefix poppler)/bin/pdfinfo poppler/bin/ || echo "Warning: Could not copy pdfinfo"
           cp $(brew --prefix poppler)/bin/pdftoppm poppler/bin/ || echo "Warning: Could not copy pdftoppm"
           cp $(brew --prefix poppler)/bin/pdftotext poppler/bin/ || echo "Warning: Could not copy pdftotext"
 
-          # Copy dependencies
-          echo "Copying dependencies"
-          cp $(brew --prefix freetype)/lib/libfreetype*.dylib poppler/lib/ || echo "Warning: Could not copy libfreetype"
-          cp $(brew --prefix fontconfig)/lib/libfontconfig*.dylib poppler/lib/ || echo "Warning: Could not copy libfontconfig"
-          cp $(brew --prefix jpeg-turbo)/lib/libjpeg*.dylib poppler/lib/ || echo "Warning: Could not copy libjpeg"
-          cp $(brew --prefix openjpeg)/lib/libopenjp2*.dylib poppler/lib/ || echo "Warning: Could not copy libopenjp2"
-          cp $(brew --prefix little-cms2)/lib/liblcms2*.dylib poppler/lib/ || echo "Warning: Could not copy liblcms2"
-          cp $(brew --prefix libpng)/lib/libpng16*.dylib poppler/lib/ || echo "Warning: Could not copy libpng16"
-          cp $(brew --prefix libtiff)/lib/libtiff*.dylib poppler/lib/ || echo "Warning: Could not copy libtiff"
+          # Systematic approach to find and copy all dependencies
+          echo "Finding and copying all dependencies..."
+          
+          # First, copy the main Poppler libraries
           cp $(brew --prefix poppler)/lib/libpoppler*.dylib poppler/lib/ || echo "Warning: Could not copy libpoppler"
-
-          # Add additional dependencies that might be required
-          # Use sudo for gpgme libraries which might have permission issues
-          sudo cp $(brew --prefix gpgme)/lib/libgpgme*.dylib poppler/lib/ || echo "Warning: Could not copy libgpgme"
-          sudo cp $(brew --prefix gpgme)/lib/libgpgmepp*.dylib poppler/lib/ || echo "Warning: Could not copy libgpgmepp"
-          sudo chown $(whoami) poppler/lib/libgpgme*.dylib poppler/lib/libgpgmepp*.dylib || echo "Warning: Could not change ownership"
-
-          # Copy NSS libraries more specifically
-          echo "Copying NSS libraries..."
-          cp $(brew --prefix nss)/lib/libsmime3.dylib poppler/lib/ || echo "Warning: Could not copy libsmime3"
-          cp $(brew --prefix nss)/lib/libnss3.dylib poppler/lib/ || echo "Warning: Could not copy libnss3"
-          cp $(brew --prefix nss)/lib/libnssutil3.dylib poppler/lib/ || echo "Warning: Could not copy libnssutil3"
-          cp $(brew --prefix nss)/lib/libplds4.dylib poppler/lib/ || echo "Warning: Could not copy libplds4"
-          cp $(brew --prefix nss)/lib/libplc4.dylib poppler/lib/ || echo "Warning: Could not copy libplc4"
-          cp $(brew --prefix nss)/lib/libssl3.dylib poppler/lib/ || echo "Warning: Could not copy libssl3"
-          cp $(brew --prefix nss)/lib/libfreebl3.dylib poppler/lib/ || echo "Warning: Could not copy libfreebl3"
-          cp $(brew --prefix nss)/lib/libsoftokn3.dylib poppler/lib/ || echo "Warning: Could not copy libsoftokn3"
-
-          # Copy NSPR libraries
-          echo "Copying NSPR libraries..."
-          cp $(brew --prefix nspr)/lib/libnspr4.dylib poppler/lib/ || echo "Warning: Could not copy libnspr4"
-          cp $(brew --prefix nspr)/lib/libplds4.dylib poppler/lib/ || echo "Warning: Could not copy libplds4"
-          cp $(brew --prefix nspr)/lib/libplc4.dylib poppler/lib/ || echo "Warning: Could not copy libplc4"
-
-          # Run otool to identify any other dependencies we might need
-          echo "Checking for additional dependencies..."
+          
+          # Function to find and copy dependencies
+          find_and_copy_deps() {
+            local file=$1
+            echo "Analyzing dependencies for: $file"
+            
+            # Get all dependencies
+            deps=$(otool -L "$file" | grep -v "@rpath" | grep -v ":" | awk '{print $1}' | grep "^/")
+            
+            for dep in $deps; do
+              # Skip system libraries
+              if [[ "$dep" == /usr/lib/* || "$dep" == /System/* ]]; then
+                continue
+              fi
+              
+              # Get the basename of the dependency
+              dep_basename=$(basename "$dep")
+              
+              # If we haven't copied this dependency yet, copy it
+              if [ ! -f "poppler/lib/$dep_basename" ]; then
+                echo "Copying dependency: $dep"
+                sudo cp "$dep" poppler/lib/ || echo "Warning: Could not copy $dep_basename"
+                sudo chmod 644 "poppler/lib/$dep_basename" || echo "Warning: Could not chmod $dep_basename"
+                sudo chown $(whoami) "poppler/lib/$dep_basename" || echo "Warning: Could not chown $dep_basename"
+                
+                # Recursively find dependencies of this dependency
+                find_and_copy_deps "$dep"
+              fi
+            done
+          }
+          
+          # Start with the Poppler binaries
+          for bin in poppler/bin/*; do
+            find_and_copy_deps "$bin"
+          done
+          
+          # Then process all libraries we've copied so far
           for lib in poppler/lib/*.dylib; do
             if [ -f "$lib" ]; then
-              echo "Dependencies for $lib:"
-              otool -L "$lib" | grep -v "@rpath" | grep -v "$lib" | grep "/"
+              find_and_copy_deps "$lib"
             fi
           done
+          
+          # Add libassuan explicitly since it was mentioned in the error
+          if [ ! -f "poppler/lib/libassuan.9.dylib" ]; then
+            cp $(brew --prefix libassuan)/lib/libassuan*.dylib poppler/lib/ || echo "Warning: Could not copy libassuan"
+          fi
 
           echo "Libraries in poppler/lib:"
           ls -la poppler/lib
