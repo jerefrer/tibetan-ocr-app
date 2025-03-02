@@ -161,7 +161,7 @@ jobs:
           # Create poppler directory structure
           mkdir -p poppler/bin
           mkdir -p poppler/lib
-          
+
           # Ensure we have write permissions
           chmod -R 755 poppler
 
@@ -180,16 +180,28 @@ jobs:
           cp $(brew --prefix libpng)/lib/libpng16*.dylib poppler/lib/ || echo "Warning: Could not copy libpng16"
           cp $(brew --prefix libtiff)/lib/libtiff*.dylib poppler/lib/ || echo "Warning: Could not copy libtiff"
           cp $(brew --prefix poppler)/lib/libpoppler*.dylib poppler/lib/ || echo "Warning: Could not copy libpoppler"
-          
+
           # Add additional dependencies that might be required
           # Use sudo for gpgme libraries which might have permission issues
           sudo cp $(brew --prefix gpgme)/lib/libgpgme*.dylib poppler/lib/ || echo "Warning: Could not copy libgpgme"
           sudo cp $(brew --prefix gpgme)/lib/libgpgmepp*.dylib poppler/lib/ || echo "Warning: Could not copy libgpgmepp"
           sudo chown $(whoami) poppler/lib/libgpgme*.dylib poppler/lib/libgpgmepp*.dylib || echo "Warning: Could not change ownership"
-          
-          cp $(brew --prefix nss)/lib/libnss*.dylib poppler/lib/ || echo "Warning: Could not copy libnss"
-          cp $(brew --prefix nspr)/lib/libnspr*.dylib poppler/lib/ || echo "Warning: Could not copy libnspr"
-          
+
+          # Copy NSS libraries more specifically
+          echo "Copying NSS libraries..."
+          cp $(brew --prefix nss)/lib/libsmime3.dylib poppler/lib/ || echo "Warning: Could not copy libsmime3"
+          cp $(brew --prefix nss)/lib/libnss3.dylib poppler/lib/ || echo "Warning: Could not copy libnss3"
+          cp $(brew --prefix nss)/lib/libnssutil3.dylib poppler/lib/ || echo "Warning: Could not copy libnssutil3"
+          cp $(brew --prefix nss)/lib/libplds4.dylib poppler/lib/ || echo "Warning: Could not copy libplds4"
+          cp $(brew --prefix nss)/lib/libplc4.dylib poppler/lib/ || echo "Warning: Could not copy libplc4"
+          cp $(brew --prefix nss)/lib/libssl3.dylib poppler/lib/ || echo "Warning: Could not copy libssl3"
+          cp $(brew --prefix nss)/lib/libfreebl3.dylib poppler/lib/ || echo "Warning: Could not copy libfreebl3"
+          cp $(brew --prefix nss)/lib/libsoftokn3.dylib poppler/lib/ || echo "Warning: Could not copy libsoftokn3"
+
+          # Copy NSPR libraries
+          echo "Copying NSPR libraries..."
+          cp $(brew --prefix nspr)/lib/libnspr4.dylib poppler/lib/ || echo "Warning: Could not copy libnspr4"
+
           # Run otool to identify any other dependencies we might need
           echo "Checking for additional dependencies..."
           for lib in poppler/lib/*.dylib; do
