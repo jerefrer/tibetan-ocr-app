@@ -104,47 +104,45 @@ jobs:
           mkdir -p temp_poppler
           Expand-Archive -Path "poppler.zip" -DestinationPath "temp_poppler" -Force
 
-          # Find any bin directory in the extracted content (recursively)
-          $binDir = Get-ChildItem -Path "temp_poppler" -Recurse -Directory | Where-Object { $_.Name -eq "bin" } | Select-Object -First 1
+          # Find the Library folder in the extracted content
+          $libraryPath = Get-ChildItem -Path "temp_poppler" -Directory | 
+                         Where-Object { $_.Name -eq "Library" } | 
+                         Select-Object -First 1
 
-          if ($binDir) {
-            Write-Host "Found bin directory at: $($binDir.FullName)"
+          if ($libraryPath) {
+            Write-Host "Found Library folder at: $($libraryPath.FullName)"
             
-            # Copy the bin directory to poppler/
-            Copy-Item -Path $binDir.FullName -Destination "poppler\" -Recurse -Force
+            # Find the bin folder inside the Library folder
+            $binPath = Get-ChildItem -Path $libraryPath.FullName -Directory | 
+                       Where-Object { $_.Name -eq "bin" } | 
+                       Select-Object -First 1
             
-            # Check if pdfinfo.exe exists in the bin directory
-            if (Test-Path "poppler\bin\pdfinfo.exe") {
-              echo "Poppler downloaded and extracted successfully"
+            if ($binPath) {
+              Write-Host "Found bin folder at: $($binPath.FullName)"
+              
+              # Create bin directory under poppler
+              mkdir -p poppler\bin
+              
+              # Copy all files from Library/bin to poppler/bin
+              Copy-Item -Path "$($binPath.FullName)\*" -Destination "poppler\bin\" -Recurse -Force
+              
+              # Check if pdfinfo.exe exists in the bin directory
+              if (Test-Path "poppler\bin\pdfinfo.exe") {
+                echo "Poppler downloaded and extracted successfully"
+              } else {
+                echo "Failed to find pdfinfo.exe in the bin directory"
+                exit 1
+              }
+              
+              # List all files in bin directory
+              Write-Host "Files in poppler\bin:"
+              Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
             } else {
-              echo "Failed to find pdfinfo.exe in the bin directory"
+              echo "No bin folder found inside the Library folder"
               exit 1
             }
-            
-            # Find and copy DLLs to bin directory
-            # First check if there's a lib directory
-            $libDir = Get-ChildItem -Path "temp_poppler" -Recurse -Directory | Where-Object { $_.Name -eq "lib" } | Select-Object -First 1
-            
-            if ($libDir) {
-              Write-Host "Found lib directory at: $($libDir.FullName)"
-              # Copy all DLLs from the lib directory to bin
-              Copy-Item -Path "$($libDir.FullName)\*.dll" -Destination "poppler\bin\" -Force
-            }
-            
-            # Also check for DLLs in other directories
-            $allDlls = Get-ChildItem -Path "temp_poppler" -Recurse -Filter "*.dll"
-            foreach ($dll in $allDlls) {
-              if (-not (Test-Path "poppler\bin\$($dll.Name)")) {
-                Write-Host "Copying $($dll.FullName) to poppler\bin"
-                Copy-Item -Path $dll.FullName -Destination "poppler\bin\" -Force
-              }
-            }
-            
-            # List all files in bin directory
-            Write-Host "Files in poppler\bin:"
-            Get-ChildItem -Path "poppler\bin" | Format-Table Name, Length
           } else {
-            echo "No bin directory found in the extracted content"
+            echo "No Library folder found in the extracted content"
             exit 1
           }
 
@@ -443,9 +441,9 @@ jobs:
             --file-version='${{ env.VERSION }}' `
             --product-version='${{ env.VERSION }}' `
             --assume-yes-for-downloads `
-            --include-data-dir=./Assets=Assets `
-            --include-data-dir=./Models=Models `
-            --include-data-dir=./poppler=poppler `
+            --include-data-dir=Assets=Assets `
+            --include-data-dir=Models=Models `
+            --include-data-files="poppler/bin/*.*=poppler/bin/" `
             main.py
 
       - name: Upload artifact
