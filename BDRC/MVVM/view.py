@@ -1,13 +1,13 @@
 import os
 import cv2
 import sys
-import subprocess
 import re
+import platform
 from uuid import UUID
 from typing import Dict, List
 from PySide6.QtCore import Signal, Qt, QThreadPool
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QSplitter, QLabel, QMessageBox
-from pdf2image import convert_from_path
+from BDRC.utils.pdf_utils import convert_from_path, run_hidden_process
 import platform
 from BDRC.Styles import DARK
 from BDRC.Inference import OCRPipeline
@@ -227,84 +227,67 @@ class AppView(QWidget):
                         if not poppler_path:
                             return
 
-                        # Open the PDF file with pdf2image
-                        try:
-                            # Calculate total pages for progress (we'll need to convert first page to get count)
-                            first_page = convert_from_path(file_path, dpi=300, first_page=1, last_page=1, poppler_path=poppler_path)
-                            if first_page:
-                                try:
-                                    pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
-                                    if platform.system() == 'Windows':
-                                        pdfinfo_path += '.exe'
-                                    
-                                    result = subprocess.run([pdfinfo_path, file_path], capture_output=True, text=True)
-                                    match = re.search(r'Pages:\s+(\d+)', result.stdout)
-                                    if match:
-                                        total_pages = int(match.group(1))
-                                    else:
-                                        # If we can't determine page count, exit with error
-                                        QMessageBox.critical(self, "Error", "Failed to determine PDF page count. Poppler may not be installed correctly.")
-                                        return
-                                except Exception as e:
-                                    print(f"Error getting page count: {e}")
-                                    QMessageBox.critical(self, "Error", f"Error getting PDF page count: {e}")
-                                    return
+                        # Get the page count first using pdfinfo
+                        pdfinfo_path = os.path.join(poppler_path, 'pdfinfo')
+                        if platform.system() == 'Windows':
+                            pdfinfo_path += '.exe'
+                        
+                        # Use our utility function to run the process with hidden window on Windows
+                        result = run_hidden_process([pdfinfo_path, file_path], capture_output=True, text=True)
+                        match = re.search(r'Pages:\s+(\d+)', result.stdout)
+                        if match:
+                            total_pages = int(match.group(1))
+                            print(f"PDF has {total_pages} pages")
+                        else:
+                            # If we can't determine page count, exit with error
+                            QMessageBox.critical(self, "Error", "Failed to determine PDF page count. Poppler may not be installed correctly.")
+                            return
+                            
+                        # Create progress dialog
+                        progress = ImportFilesProgress("Reading PDF file...", max_length=total_pages)
+                        progress.setWindowModality(Qt.WindowModality.WindowModal)
+
+                        tmp_image_dir = os.path.join(self.tmp_dir, "images")
+                        create_dir(tmp_image_dir)
+                        
+                        # Process in batches to avoid memory issues
+                        batch_size = 5
+                        for batch_start in range(1, total_pages + 1, batch_size):
+                            if progress.wasCanceled():
+                                break
                                 
-                                progress = ImportFilesProgress("Reading PDF file...", max_length=total_pages)
-                                progress.setWindowModality(Qt.WindowModality.WindowModal)
-
-                                tmp_image_dir = os.path.join(self.tmp_dir, "images")
-                                create_dir(tmp_image_dir)
-
-                                # Convert first page (already converted)
-                                tmp_img_path = f"{tmp_image_dir}/{file_n}_0.jpg"
-                                first_page[0].save(tmp_img_path, "JPEG", quality=100)
+                            batch_end = min(batch_start + batch_size - 1, total_pages)
+                            progress.setLabelText(f"Processing pages {batch_start} to {batch_end} of {total_pages}...")
+                            
+                            # Convert batch of pages
+                            pages = convert_from_path(
+                                file_path, 
+                                dpi=300, 
+                                first_page=batch_start, 
+                                last_page=batch_end,
+                                poppler_path=poppler_path
+                            )
+                            
+                            # Save each page
+                            for i, page in enumerate(pages):
+                                page_num = batch_start + i - 1  # Adjust for 0-based indexing
+                                tmp_img_path = f"{tmp_image_dir}/{file_n}_{page_num}.jpg"
+                                page.save(tmp_img_path, "JPEG", quality=100)
                                 image_paths.append(tmp_img_path)
-                                progress.setValue(0)
-                                
-                                # Convert remaining pages if there are more
-                                if total_pages > 1:
-                                    # Process in batches to avoid memory issues
-                                    batch_size = 5
-                                    for batch_start in range(2, total_pages + 1, batch_size):
-                                        if progress.wasCanceled():
-                                            break
-                                            
-                                        batch_end = min(batch_start + batch_size - 1, total_pages)
-                                        progress.setLabelText(f"Processing pages {batch_start} to {batch_end} of {total_pages}...")
-                                        
-                                        # Convert batch of pages
-                                        pages = convert_from_path(
-                                            file_path, 
-                                            dpi=300, 
-                                            first_page=batch_start, 
-                                            last_page=batch_end,
-                                            poppler_path=poppler_path
-                                        )
-                                        
-                                        # Save each page
-                                        for i, page in enumerate(pages):
-                                            page_num = batch_start + i - 1  # Adjust for 0-based indexing
-                                            tmp_img_path = f"{tmp_image_dir}/{file_n}_{page_num}.jpg"
-                                            page.save(tmp_img_path, "JPEG", quality=100)
-                                            image_paths.append(tmp_img_path)
-                                            progress.setValue(page_num)
-                                
-                                size_hint = self.image_gallery.sizeHint()
-                                target_width = size_hint.width() - 80
+                                progress.setValue(page_num)
+                        
+                        size_hint = self.image_gallery.sizeHint()
+                        target_width = size_hint.width() - 80
 
-                                for idx, img_path in enumerate(image_paths):
-                                    if os.path.isfile(img_path):
-                                        ocr_data = build_ocr_data(idx, img_path, target_width)
-                                        imported_data[ocr_data.guid] = ocr_data
+                        for idx, img_path in enumerate(image_paths):
+                            if os.path.isfile(img_path):
+                                ocr_data = build_ocr_data(idx, img_path, target_width)
+                                imported_data[ocr_data.guid] = ocr_data
 
-                                self.import_files(imported_data)
-                        except Exception as e:
-                            error_dialog = NotificationDialog("Error importing PDF", f"PDF import error: {str(e)}")
-                            error_dialog.exec()
+                        self.import_files(imported_data)
                     except Exception as e:
-                        error_dialog = NotificationDialog("Error importing PDF", str(e))
-                        error_dialog.exec_()
+                        error_dialog = NotificationDialog("Error importing PDF", f"PDF import error: {str(e)}")
+                        error_dialog.exec()
                 else:
                     error_dialog = NotificationDialog("Invalid file", "The selected file is not a valid file.")
                     error_dialog.exec_()
