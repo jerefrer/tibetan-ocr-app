@@ -17,7 +17,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Set required env vars (Unix)
+      - name: Set required env vars (macOS)
         if: runner.os == 'macOS'
         env:
           ARTIFACT_PATH: "BDRC Tibetan OCR.dmg"
@@ -33,6 +33,8 @@ jobs:
 
       - name: Set required env vars (Windows)
         if: runner.os == 'Windows'
+        env:
+          ARTIFACT_PATH: WindowsBuild/BDRC Tibetan OCR.exe
         shell: pwsh
         run: |
           $OS = $env:RUNNER_OS.ToLower()
@@ -41,6 +43,7 @@ jobs:
           $ARTIFACT_NAME = "bdrc_ocr_${OS}_${ARCH}_${VERSION}"
           echo "VERSION=${VERSION}" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "ARTIFACT_PATH=$env:ARTIFACT_PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Cache Git LFS files
         uses: actions/cache@v4
@@ -464,11 +467,13 @@ jobs:
 
           # Build app
           python -m nuitka --standalone `
+            --onefile `
             --output-dir=WindowsBuild `
             --plugin-enable=pyside6 `
             --windows-console-mode=disable `
             --windows-icon-from-ico=logo.ico `
             --company-name="Buddhist Digital Resource Center" `
+            --output-filename="BDRC Tibetan OCR.exe" `
             --product-name="BDRC Tibetan OCR" `
             --file-version='${{ env.VERSION }}' `
             --product-version='${{ env.VERSION }}' `
@@ -479,40 +484,12 @@ jobs:
             --include-data-files=poppler/bin/*=poppler/bin/ `
             main.py
 
-          # Copy poppler to the build directory
-          Write-Host "Copying Poppler to build directory..."
-          Copy-Item -Path "poppler" -Destination "WindowsBuild\main.dist\" -Recurse -Force
-
-          # Rename the executable
-          Write-Host "Renaming executable..."
-          Rename-Item -Path "WindowsBuild\main.dist\main.exe" -NewName "BDRC Tibetan OCR.exe"
-
-          # Create a zip file for the release
-          Write-Host "Creating zip file for release..."
-          $zipPath = "WindowsBuild\bdrc_ocr_windows_x64_0.1.1.zip"
-          Write-Host "Creating zip at: $zipPath"
-          Compress-Archive -Path "WindowsBuild\main.dist\*" -DestinationPath $zipPath -Force
-
-          # Set output path for artifact upload
-          Write-Host "Setting artifact path for upload..."
-          # We're now using hardcoded values for the artifact path, so this is no longer needed
-          # echo "WINDOWS_ARTIFACT_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload artifact (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: bdrc_ocr_windows_x64_0.1.1
-          path: WindowsBuild/bdrc_ocr_windows_x64_0.1.1.zip
-          if-no-files-found: error
-
-      - name: Upload artifact (macOS)
-        if: runner.os == 'macOS'
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_PATH }}
-          if-no-files-found: error
+          compression-level: 0
 
   create-release:
     needs: build
