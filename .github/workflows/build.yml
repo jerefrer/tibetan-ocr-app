@@ -33,8 +33,6 @@ jobs:
 
       - name: Set required env vars (Windows)
         if: runner.os == 'Windows'
-        env:
-          ARTIFACT_PATH: WindowsBuild/$env:ARTIFACT_NAME.zip
         shell: pwsh
         run: |
           $OS = $env:RUNNER_OS.ToLower()
@@ -43,7 +41,6 @@ jobs:
           $ARTIFACT_NAME = "bdrc_ocr_${OS}_${ARCH}_${VERSION}"
           echo "VERSION=${VERSION}" | Out-File -FilePath $env:GITHUB_ENV -Append
           echo "ARTIFACT_NAME=${ARTIFACT_NAME}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "ARTIFACT_PATH=WindowsBuild/${ARTIFACT_NAME}.zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Cache Git LFS files
         uses: actions/cache@v4
@@ -81,9 +78,42 @@ jobs:
           echo "Downloading OCR models..."
           mkdir -p OCRModels
           curl -L https://github.com/buda-base/tibetan-ocr-app/releases/download/v0.1/bdrc_ocr_models_1.0.zip -o ocr_models.zip
-          unzip ocr_models.zip -d .
-          echo "Downloaded OCR models successfully"
+
+      - name: Extract OCR Models (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "Extracting models on Windows..."
+          unzip ocr_models.zip -d temp_models
+
+          # Create OCRModels directory if it doesn't exist
+          mkdir -p OCRModels
+
+          # Copy model directories to OCRModels
+          cp -R temp_models/* OCRModels/
+
+          # List the contents (using ls instead of find for Windows compatibility)
+          echo "OCRModels directory contents:"
           ls -la OCRModels
+
+      - name: Extract OCR Models (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          echo "Extracting models on Unix..."
+          unzip ocr_models.zip -d temp_models
+
+          # Move the model subfolders directly into OCRModels
+          for dir in temp_models/*/; do
+            model_name=$(basename "$dir")
+            echo "Moving $dir to OCRModels/$model_name"
+            mkdir -p "OCRModels/$model_name"
+            cp -R "$dir"* "OCRModels/$model_name/"
+          done
+
+          # List the contents
+          echo "OCRModels directory contents:"
+          find OCRModels -type d | sort
 
       - name: Install dependencies
         run: |
@@ -415,16 +445,19 @@ jobs:
 
       - name: Build with Nuitka (Windows)
         if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
         run: |
           # List all files in poppler directory
           Write-Host "Files in poppler\:"
           Get-ChildItem -Path "poppler" -Recurse | Format-Table Name, Length
-          
+
           # Check if OCRModels directory exists
           Write-Host "Checking OCRModels directory..."
           if (Test-Path "OCRModels") {
             Write-Host "OCRModels directory exists, listing contents:"
-            Get-ChildItem -Path "OCRModels" -Recurse | Format-Table Name, Length
+            Get-ChildItem -Path "OCRModels" -Directory | ForEach-Object {
+              Write-Host "Found model directory: $($_.Name)"
+            }
           } else {
             Write-Host "OCRModels directory doesn't exist yet, this is expected"
           }
@@ -449,21 +482,37 @@ jobs:
           # Copy poppler to the build directory
           Write-Host "Copying Poppler to build directory..."
           Copy-Item -Path "poppler" -Destination "WindowsBuild\main.dist\" -Recurse -Force
-          
+
           # Rename the executable
           Write-Host "Renaming executable..."
           Rename-Item -Path "WindowsBuild\main.dist\main.exe" -NewName "BDRC Tibetan OCR.exe"
-          
+
           # Create a zip file for the release
           Write-Host "Creating zip file for release..."
-          Compress-Archive -Path "WindowsBuild\main.dist\*" -DestinationPath "WindowsBuild\$env:ARTIFACT_NAME.zip" -Force
+          $zipPath = "WindowsBuild\bdrc_ocr_windows_x64_0.1.1.zip"
+          Write-Host "Creating zip at: $zipPath"
+          Compress-Archive -Path "WindowsBuild\main.dist\*" -DestinationPath $zipPath -Force
 
-      - name: Upload artifact
+          # Set output path for artifact upload
+          Write-Host "Setting artifact path for upload..."
+          # We're now using hardcoded values for the artifact path, so this is no longer needed
+          # echo "WINDOWS_ARTIFACT_PATH=$zipPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bdrc_ocr_windows_x64_0.1.1
+          path: WindowsBuild/bdrc_ocr_windows_x64_0.1.1.zip
+          if-no-files-found: error
+
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_PATH }}
-          compression-level: 0
+          if-no-files-found: error
 
   create-release:
     needs: build
