@@ -121,10 +121,19 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install setuptools
           pip install nuitka
           pip install pyside6
           pip install -r requirements.txt
           pyside6-rcc resources.qrc -o resources.py
+
+      - name: Install specific wheel version for macOS
+        if: runner.os == 'macOS'
+        run: pip install wheel==0.37.1
+
+      - name: Install wheel for other platforms
+        if: runner.os != 'macOS'
+        run: pip install wheel
 
       - name: Download Poppler for Windows
         if: runner.os == 'Windows'
