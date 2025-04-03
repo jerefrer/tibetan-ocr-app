@@ -477,19 +477,55 @@ jobs:
             --product-name="BDRC Tibetan OCR" `
             --file-version='${{ env.VERSION }}' `
             --product-version='${{ env.VERSION }}' `
-            --assume-yes-for-downloads `
+            --copyright="Copyright 2025 Buddhist Digital Resource Center" `
             --include-data-dir=Assets=Assets `
             --include-data-dir=Models=Models `
             --include-data-dir=OCRModels=OCRModels `
             --include-data-files=poppler/bin/*=poppler/bin/ `
+            --disable-console `
+            --windows-uac-admin `
+            --windows-disable-console `
+            --windows-file-description="BDRC Tibetan OCR Application" `
+            --windows-file-version='${{ env.VERSION }}' `
+            --windows-product-version='${{ env.VERSION }}' `
+            --windows-company-name="Buddhist Digital Resource Center" `
+            --windows-product-name="BDRC Tibetan OCR" `
+            --windows-file-version-resource-version='${{ env.VERSION }}' `
+            --windows-product-version-resource-version='${{ env.VERSION }}' `
+            --disable-ccache `
             main.py
+
+      - name: Sign Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.CODE_SIGNING_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
+        run: |
+          # Check if certificate is available
+          if ($env:CERTIFICATE_BASE64 -and $env:CERTIFICATE_PASSWORD) {
+            Write-Host "Code signing certificate found, signing executable..."
+            
+            # Create certificate file from base64 string
+            $certificateBytes = [System.Convert]::FromBase64String($env:CERTIFICATE_BASE64)
+            Set-Content -Path certificate.pfx -Value $certificateBytes -Encoding Byte
+            
+            # Sign the executable using signtool
+            & 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.17763.0\x86\signtool.exe' sign /f certificate.pfx /p $env:CERTIFICATE_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 "WindowsBuild\BDRC Tibetan OCR.exe"
+            
+            # Clean up
+            Remove-Item certificate.pfx
+            
+            Write-Host "Executable signed successfully"
+          } else {
+            Write-Host "No code signing certificate found, skipping signing step"
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.ARTIFACT_PATH }}
-          compression-level: 0
 
   create-release:
     needs: build
