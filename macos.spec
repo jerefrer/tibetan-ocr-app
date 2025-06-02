@@ -6,17 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[("Assets", "Assets"), ("Models", "Models")],
-    hiddenimports=[
-        'numpy', 
-        'numpy.core._multiarray_umath',
-        'PyPDF2',
-        'pdf2image',
-        'PIL',
-        'PIL.Image',
-        'pyctcdecode',
-        'pyewts',
-        'platformdirs'
-    ],
+    hiddenimports=['numpy', 'numpy.core._multiarray_umath'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -57,6 +47,6 @@ coll = COLLECT(
 )
 
 app = BUNDLE(coll,
-             name='BDRC Tibetan OCR.app',
+             name='BDRC.app',
              icon="logo.icns",
              bundle_identifier=None)
