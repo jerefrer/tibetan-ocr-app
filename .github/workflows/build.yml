@@ -73,7 +73,6 @@ jobs:
         with:
           python-version: "3.10"
 
-<<<<<<< HEAD
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
@@ -165,11 +164,7 @@ jobs:
             --macos-create-app-bundle \
             --include-data-dir=./Assets=Assets \
             --include-data-dir=./Models=Models \
-<<<<<<< HEAD
             --include-data-dir=./OCRModels=OCRModels \
-            --include-data-dir=./poppler=poppler \
-=======
->>>>>>> parent of 9d4b5c6 (Adds a choice when opening PDFs between extracting images or converting pages into images. Also improves the quality of thumbnails.)
             main.py
 
           mv "macOSBuild/main.app" "macOSBuild/BDRC Tibetan OCR.app"
@@ -268,25 +263,6 @@ jobs:
         if: ${{ runner.os == 'Windows' }}
         shell: pwsh
         run: |
-<<<<<<< HEAD
-          # List all files in poppler directory
-          Write-Host "Files in poppler\:"
-          Get-ChildItem -Path "poppler" -Recurse | Format-Table Name, Length
-
-          # Check if OCRModels directory exists
-          Write-Host "Checking OCRModels directory..."
-          if (Test-Path "OCRModels") {
-            Write-Host "OCRModels directory exists, listing contents:"
-            Get-ChildItem -Path "OCRModels" -Directory | ForEach-Object {
-              Write-Host "Found model directory: $($_.Name)"
-            }
-          } else {
-            Write-Host "OCRModels directory doesn't exist yet, this is expected"
-          }
-
-          # Build app
-=======
->>>>>>> parent of 9d4b5c6 (Adds a choice when opening PDFs between extracting images or converting pages into images. Also improves the quality of thumbnails.)
           python -m nuitka --standalone `
             --onefile `
             --windows-console-mode=disable `
@@ -295,7 +271,6 @@ jobs:
             --plugin-enable=pyside6 `
             --windows-icon-from-ico=logo.ico `
             --company-name="Buddhist Digital Resource Center" `
-<<<<<<< HEAD
             --product-name="BDRC Tibetan OCR" `
             --file-version='${{ env.VERSION }}' `
             --product-version='${{ env.VERSION }}' `
@@ -303,14 +278,6 @@ jobs:
             --include-data-dir=Assets=Assets `
             --include-data-dir=Models=Models `
             --include-data-dir=OCRModels=OCRModels `
-            --include-data-files=poppler/bin/*=poppler/bin/ `
-=======
-            --product-name="Tibetan OCR App" `
-            --file-version=${{ env.VERSION }} `
-            --product-version=${{ env.VERSION }} `
-            --include-data-dir=./Assets=Assets `
-            --include-data-dir=./Models=Models `
->>>>>>> parent of 9d4b5c6 (Adds a choice when opening PDFs between extracting images or converting pages into images. Also improves the quality of thumbnails.)
             main.py
 
       - name: Upload artifact
