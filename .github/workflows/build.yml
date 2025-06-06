@@ -2,7 +2,7 @@ name: Build Packages
 
 on:
   push:
-    branches: [build-on-push]
+    branches: [test-build]
     tags:
       - "v*.*" # Triggers on tags like v1.0.0, v0.1.0, etc.
 
